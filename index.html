@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpamGuard AI - Client-Side Spam Classifier</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    
+    <!-- Google Fonts: Orbitron for a futuristic feel -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+
+    <style>
+        /* Custom Styles for the Futuristic Look */
+        :root {
+            --glow-color-primary: #00aaff;
+            --glow-color-secondary: #ff00ff;
+            --background-dark: #07041a;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--background-dark);
+            color: #e0e0e0;
+            background-image:
+                radial-gradient(circle at 1% 1%, rgba(0, 170, 255, 0.1) 0%, transparent 25%),
+                radial-gradient(circle at 99% 99%, rgba(255, 0, 255, 0.1) 0%, transparent 25%);
+        }
+
+        .font-orbitron {
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .neon-text-primary {
+            text-shadow:
+                0 0 5px var(--glow-color-primary),
+                0 0 10px var(--glow-color-primary),
+                0 0 20px var(--glow-color-primary),
+                0 0 40px var(--glow-color-primary);
+        }
+
+        .neon-text-secondary {
+            text-shadow:
+                0 0 5px var(--glow-color-secondary),
+                0 0 10px var(--glow-color-secondary),
+                0 0 20px var(--glow-color-secondary);
+        }
+
+        .glass-card {
+            background: rgba(10, 10, 30, 0.6);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 170, 255, 0.2);
+            border-radius: 1rem;
+        }
+
+        .glow-border {
+            box-shadow: 0 0 20px rgba(0, 170, 255, 0.4);
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, var(--glow-color-primary), var(--glow-color-secondary));
+            transition: all 0.3s ease-in-out;
+            box-shadow: 0 0 15px rgba(0, 170, 255, 0.5), 0 0 15px rgba(255, 0, 255, 0.5);
+            border: none;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 25px rgba(0, 170, 255, 0.8), 0 0 25px rgba(255, 0, 255, 0.8);
+        }
+        
+        .btn-primary:disabled {
+            background: #4a4a5e;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .radio-label {
+            border: 1px solid rgba(0, 170, 255, 0.3);
+            transition: all 0.3s;
+        }
+
+        .radio-label:hover {
+            background-color: rgba(0, 170, 255, 0.1);
+            border-color: var(--glow-color-primary);
+        }
+        
+        input[type="radio"]:checked + .radio-label {
+            background-color: rgba(0, 170, 255, 0.2);
+            border-color: var(--glow-color-primary);
+            box-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
+        }
+        
+        #resultGauge {
+            transition: stroke-dashoffset 1s ease-in-out;
+        }
+        
+        .tab {
+            cursor: pointer;
+            transition: all 0.3s;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active, .tab:hover {
+            color: var(--glow-color-primary);
+            border-bottom-color: var(--glow-color-primary);
+            text-shadow: 0 0 8px var(--glow-color-primary);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="w-full max-w-4xl mx-auto">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-orbitron font-bold neon-text-primary">SpamGuard AI</h1>
+            <p class="text-gray-400 mt-2">Client-Side AI-Powered Spam Detection</p>
+        </header>
+
+        <!-- Tabs -->
+        <nav class="flex justify-center space-x-8 mb-8 font-orbitron text-lg text-gray-400">
+            <a class="tab active" data-tab="home">Classifier</a>
+            <a class="tab" data-tab="about">About</a>
+            <a class="tab" data-tab="device">Add to Device</a>
+        </nav>
+
+        <!-- Main Content -->
+        <main>
+            <!-- Home/Classifier Tab -->
+            <div id="home-content" class="tab-content">
+                <div class="glass-card glow-border p-6 md:p-8">
+                    <!-- Model Selection -->
+                    <div class="mb-6">
+                        <h2 class="text-xl font-semibold mb-3 text-center">Select Analysis Type</h2>
+                        <div id="modelSelector" class="grid grid-cols-2 gap-4">
+                            <input type="radio" name="modelType" id="sms" value="sms" class="hidden" checked>
+                            <label for="sms" class="radio-label p-4 text-center rounded-lg cursor-pointer">
+                                <span class="text-2xl">💬</span>
+                                <span class="block mt-1 font-semibold">Analyze SMS</span>
+                            </label>
+
+                            <input type="radio" name="modelType" id="url" value="url" class="hidden">
+                            <label for="url" class="radio-label p-4 text-center rounded-lg cursor-pointer">
+                                <span class="text-2xl">🔗</span>
+                                <span class="block mt-1 font-semibold">Analyze URL</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Input Area -->
+                    <div class="mb-6">
+                        <textarea id="inputText" class="w-full h-32 p-3 bg-gray-900/50 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 transition" placeholder="Enter SMS message here..."></textarea>
+                    </div>
+
+                    <!-- Action Button -->
+                    <div class="text-center">
+                        <button id="analyzeBtn" class="btn-primary text-white font-bold py-3 px-8 rounded-full text-lg font-orbitron">
+                            <span id="btn-text">Load Models...</span>
+                        </button>
+                    </div>
+
+                    <!-- Status/Error Messages -->
+                    <div id="statusMessage" class="text-center mt-4 text-gray-400 min-h-[1.5rem]"></div>
+                </div>
+
+                <!-- Result Display -->
+                <div id="resultSection" class="glass-card p-6 md:p-8 mt-8 hidden">
+                    <h2 class="text-2xl font-orbitron text-center mb-6">Analysis Result</h2>
+                    <div class="flex flex-col md:flex-row items-center justify-center gap-8">
+                        <!-- Gauge -->
+                        <div class="relative w-48 h-48">
+                            <svg class="w-full h-full" viewBox="0 0 36 36">
+                                <path d="M18 2.0845
+                                        a 15.9155 15.9155 0 0 1 0 31.831
+                                        a 15.9155 15.9155 0 0 1 0 -31.831"
+                                    fill="none" stroke="#374151" stroke-width="3" />
+                                <path id="resultGauge" d="M18 2.0845
+                                        a 15.9155 15.9155 0 0 1 0 31.831
+                                        a 15.9155 15.9155 0 0 1 0 -31.831"
+                                    fill="none" stroke="url(#gradient)" stroke-width="3" stroke-linecap="round"
+                                    stroke-dasharray="0, 100" />
+                                <defs>
+                                    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" style="stop-color:#34D399;" /> <!-- Green -->
+                                        <stop offset="50%" style="stop-color:#FBBF24;" /> <!-- Yellow -->
+                                        <stop offset="100%" style="stop-color:#F87171;" /> <!-- Red -->
+                                    </linearGradient>
+                                </defs>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <span id="confidenceScore" class="text-4xl font-orbitron font-bold">0%</span>
+                            </div>
+                        </div>
+                        <!-- Verdict -->
+                        <div class="text-center md:text-left">
+                            <p class="text-gray-400 text-lg">Classification:</p>
+                            <p id="predictionText" class="text-4xl font-bold font-orbitron">---</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- About Tab -->
+            <div id="about-content" class="tab-content hidden glass-card p-6 md:p-8">
+                <h2 class="text-2xl font-orbitron mb-4">About SpamGuard AI</h2>
+                <p class="text-gray-300 leading-relaxed mb-4">
+                    SpamGuard AI is a demonstration of the power of edge computing and machine learning in the browser. By leveraging TensorFlow.js, we can run sophisticated deep learning models directly on your device.
+                </p>
+                <p class="text-gray-300 leading-relaxed font-semibold">Key Principles:</p>
+                <ul class="list-disc list-inside text-gray-300 leading-relaxed mt-2">
+                    <li><strong class="text-cyan-400">Privacy First:</strong> Your data is never uploaded, sent, or stored anywhere. All processing is done locally.</li>
+                    <li><strong class="text-cyan-400">Accessibility:</strong> Works on any modern browser, on desktop or mobile, without needing powerful hardware.</li>
+                    <li><strong class="text-cyan-400">Dual Models:</strong> Utilizes two distinct, expertly trained models—one for the nuances of SMS language and another for the structural patterns of malicious URLs.</li>
+                </ul>
+            </div>
+            
+            <!-- Add to Device Tab -->
+            <div id="device-content" class="tab-content hidden glass-card p-6 md:p-8 text-center">
+                <h2 class="text-2xl font-orbitron mb-4">Add to Your Device</h2>
+                <p class="text-gray-300 leading-relaxed mb-6">
+                    For quick access, you can add SpamGuard AI to your home screen. This works best on mobile browsers that support Progressive Web Apps (PWAs).
+                </p>
+                <div class="bg-gray-900/50 p-4 rounded-lg">
+                    <p class="font-semibold">On Mobile (Chrome/Safari):</p>
+                    <p class="text-sm text-gray-400">Tap the 'Share' or 'Settings' icon in your browser and select 'Add to Home Screen'.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const MODELS_PATH = './models/';
+        const SMS_MODEL_CONFIG = {
+            modelUrl: MODELS_PATH + 'sms_model.json',
+            indexUrl: MODELS_PATH + 'sms_word_index.json',
+            maxLen: 150, // Max length of SMS sequence
+            type: 'sms'
+        };
+        const URL_MODEL_CONFIG = {
+            modelUrl: MODELS_PATH + 'url_model.json',
+            indexUrl: MODELS_PATH + 'url_char_index.json',
+            maxLen: 200, // Max length of URL sequence
+            type: 'url'
+        };
+
+        // --- GLOBAL STATE ---
+        let smsModel = null;
+        let urlModel = null;
+        let smsIndex = null;
+        let urlIndex = null;
+
+        // --- UI ELEMENTS ---
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const btnText = document.getElementById('btn-text');
+        const inputText = document.getElementById('inputText');
+        const statusMessage = document.getElementById('statusMessage');
+        const resultSection = document.getElementById('resultSection');
+        const predictionText = document.getElementById('predictionText');
+        const confidenceScore = document.getElementById('confidenceScore');
+        const resultGauge = document.getElementById('resultGauge');
+        const modelSelector = document.getElementById('modelSelector');
+
+        // --- CORE FUNCTIONS ---
+
+        /**
+         * Loads a model and its corresponding index file.
+         * @param {object} config - The model configuration object.
+         * @returns {Promise<[tf.LayersModel, object]>} A promise that resolves with the loaded model and index.
+         */
+        async function loadModelAndIndex(config) {
+            try {
+                const [model, indexData] = await Promise.all([
+                    tf.loadLayersModel(config.modelUrl),
+                    fetch(config.indexUrl).then(res => res.json())
+                ]);
+                console.log(`${config.type.toUpperCase()} model and index loaded successfully.`);
+                return [model, indexData];
+            } catch (error) {
+                console.error(`Error loading ${config.type.toUpperCase()} model:`, error);
+                throw new Error(`Failed to load ${config.type.toUpperCase()} assets. Please check the model files and network connection.`);
+            }
+        }
+
+        /**
+         * Preprocesses SMS text for the model.
+         * @param {string} text - The input SMS string.
+         * @param {object} wordIndex - The word-to-index mapping.
+         * @param {number} maxLen - The maximum sequence length.
+         * @returns {tf.Tensor} A 2D tensor ready for the model.
+         */
+        function preprocessSms(text, wordIndex, maxLen) {
+            const cleanedText = text.toLowerCase().replace(/[^\w\s]/gi, '').split(/\s+/);
+            const sequence = cleanedText.map(word => {
+                const index = wordIndex[word];
+                return index ? index + 3 : 2; // Add 3 for reserved indices (padding, start, unknown)
+            });
+            const paddedSequence = Array(maxLen).fill(0);
+            const start = Math.max(0, maxLen - sequence.length);
+            for (let i = 0; i < Math.min(sequence.length, maxLen); i++) {
+                paddedSequence[start + i] = sequence[i];
+            }
+            return tf.tensor2d([paddedSequence]);
+        }
+        
+        /**
+         * Preprocesses URL text for the model.
+         * @param {string} text - The input URL string.
+         * @param {object} charIndex - The char-to-index mapping.
+         * @param {number} maxLen - The maximum sequence length.
+         * @returns {tf.Tensor} A 2D tensor ready for the model.
+         */
+        function preprocessUrl(text, charIndex, maxLen) {
+            const sequence = text.split('').map(char => charIndex[char.toLowerCase()] || 0); // 0 for unknown chars
+            const paddedSequence = Array(maxLen).fill(0);
+            const start = Math.max(0, maxLen - sequence.length);
+             for (let i = 0; i < Math.min(sequence.length, maxLen); i++) {
+                paddedSequence[start + i] = sequence[i];
+            }
+            return tf.tensor2d([paddedSequence]);
+        }
+
+        /**
+         * Performs the analysis using the selected model.
+         */
+        async function analyze() {
+            const selectedModelType = document.querySelector('input[name="modelType"]:checked').value;
+            const text = inputText.value;
+
+            if (!text.trim()) {
+                statusMessage.textContent = "Please enter some text or a URL to analyze.";
+                return;
+            }
+
+            // Show processing state
+            btnText.textContent = "Analyzing...";
+            analyzeBtn.disabled = true;
+            statusMessage.textContent = "";
+            resultSection.classList.add('hidden');
+
+            try {
+                let prediction;
+                let tensor;
+                
+                // Select model and preprocess
+                if (selectedModelType === 'sms') {
+                    tensor = preprocessSms(text, smsIndex, SMS_MODEL_CONFIG.maxLen);
+                    prediction = await smsModel.predict(tensor).data();
+                } else {
+                    tensor = preprocessUrl(text, urlIndex, URL_MODEL_CONFIG.maxLen);
+                    prediction = await urlModel.predict(tensor).data();
+                }
+
+                const score = prediction[0];
+                updateResultUI(score);
+
+            } catch (error) {
+                console.error("Analysis error:", error);
+                statusMessage.textContent = "An error occurred during analysis.";
+            } finally {
+                // Restore button state
+                btnText.textContent = "Analyze";
+                analyzeBtn.disabled = false;
+                tf.disposeVariables(); // Clean up tensors
+            }
+        }
+
+        /**
+         * Updates the UI with the prediction results.
+         * @param {number} score - The prediction score from the model (0 to 1).
+         */
+        function updateResultUI(score) {
+            const isSpam = score > 0.5;
+            const percentage = Math.round(score * 100);
+            
+            // Update prediction text and color
+            predictionText.textContent = isSpam ? "SPAM DETECTED" : "Looks Safe";
+            predictionText.className = `text-4xl font-bold font-orbitron ${isSpam ? 'text-red-400 neon-text-secondary' : 'text-green-400 neon-text-primary'}`;
+            
+            // Update confidence score
+            confidenceScore.textContent = `${percentage}%`;
+            
+            // Update gauge
+            const circumference = 100;
+            const offset = circumference - (score * circumference);
+            resultGauge.style.strokeDasharray = `${score * circumference}, ${circumference}`;
+            
+            resultSection.classList.remove('hidden');
+        }
+
+        /**
+         * Handles switching between tabs.
+         */
+        function handleTabSwitch(e) {
+            if (!e.target.classList.contains('tab')) return;
+
+            const targetTab = e.target.dataset.tab;
+
+            // Update tab styles
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            e.target.classList.add('active');
+
+            // Show/hide content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                if (content.id === `${targetTab}-content`) {
+                    content.classList.remove('hidden');
+                } else {
+                    content.classList.add('hidden');
+                }
+            });
+        }
+        
+        // --- EVENT LISTENERS ---
+        analyzeBtn.addEventListener('click', analyze);
+
+        modelSelector.addEventListener('change', (e) => {
+            const type = e.target.value;
+            inputText.placeholder = type === 'sms' 
+                ? 'Enter SMS message here...' 
+                : 'Enter a full URL (e.g., https://example.com) here...';
+            resultSection.classList.add('hidden');
+            statusMessage.textContent = "";
+        });
+
+        document.querySelector('nav').addEventListener('click', handleTabSwitch);
+
+        // --- INITIALIZATION ---
+        async function main() {
+            analyzeBtn.disabled = true;
+            statusMessage.textContent = 'Loading AI models, please wait...';
+            
+            try {
+                // Load models in parallel
+                const [[smsM, smsI], [urlM, urlI]] = await Promise.all([
+                    loadModelAndIndex(SMS_MODEL_CONFIG),
+                    loadModelAndIndex(URL_MODEL_CONFIG)
+                ]);
+                
+                smsModel = smsM;
+                smsIndex = smsI;
+                urlModel = urlM;
+                urlIndex = urlI;
+
+                // Models loaded, enable the app
+                statusMessage.textContent = 'Models loaded. Ready for analysis.';
+                btnText.textContent = "Analyze";
+                analyzeBtn.disabled = false;
+                
+                setTimeout(() => {
+                    if (statusMessage.textContent === 'Models loaded. Ready for analysis.') {
+                        statusMessage.textContent = '';
+                    }
+                }, 3000);
+
+            } catch (error) {
+                console.error("Initialization failed:", error);
+                statusMessage.textContent = error.message;
+                btnText.textContent = "Error";
+            }
+        }
+        
+        // Start the application
+        main();
+    </script>
+</body>
+</html>
