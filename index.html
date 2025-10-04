@@ -4,12 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SpamGuard AI - Client-Side Spam Classifier</title>
+    <!-- FIX: Added link to favicon -->
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- TensorFlow.js -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <!-- FIX: Pinned TensorFlow.js to a specific stable version -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
     
     <!-- Google Fonts: Orbitron for a futuristic feel -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -185,7 +187,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // --- CONFIGURATION ---
-            const MODELS_PATH = './models/';
+            const MODELS_PATH = 'models/';
             const SMS_MODEL_CONFIG = { modelUrl: MODELS_PATH + 'sms_model.json', indexUrl: MODELS_PATH + 'sms_word_index.json', maxLen: 150, type: 'sms' };
             const URL_MODEL_CONFIG = { modelUrl: MODELS_PATH + 'url_model.json', indexUrl: MODELS_PATH + 'url_char_index.json', maxLen: 200, type: 'url' };
 
@@ -222,9 +224,7 @@
                     return [model, indexData];
                 } catch (error) {
                     console.error(`Error loading ${config.type.toUpperCase()} assets:`, error);
-                    // This is the critical point where the user's error occurs.
-                    // The error message from TF.js about inputShape will be logged here.
-                    throw new Error(`Failed to load ${config.type.toUpperCase()} assets. Check model files, network, and ensure model was saved with an input_shape in the first layer.`);
+                    throw new Error(`Failed to load ${config.type.toUpperCase()} assets. Check model files, network, and ensure model was saved correctly (using the Functional API is recommended).`);
                 }
             }
 
@@ -234,7 +234,6 @@
                     : text.split('')
                 ).map(token => {
                     const tokenIndex = index[token.toLowerCase()];
-                    // For SMS, handle OOV with index 2 (unknown) and add 3 for reserved indices
                     return type === 'sms' ? (tokenIndex ? tokenIndex + 3 : 2) : (tokenIndex || 0);
                 });
 
@@ -260,7 +259,7 @@
                 ui.statusMessage.textContent = "";
                 ui.resultSection.classList.add('hidden');
 
-                await new Promise(resolve => setTimeout(resolve, 50)); // Allow UI to update
+                await new Promise(resolve => setTimeout(resolve, 50));
 
                 try {
                     let prediction, tensor;
