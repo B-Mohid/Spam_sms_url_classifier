@@ -9,10 +9,10 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- TensorFlow.js -->
+    <!-- TensorFlow.js (Pinned Version) -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
     
-    <!-- Google Fonts: Orbitron for a futuristic feel -->
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
@@ -228,19 +228,24 @@
             }
 
             function preprocess(text, index, maxLen, type) {
+                // Word-based for SMS, character-based for URLs
                 const sequence = (type === 'sms' 
-                    ? text.toLowerCase().replace(/[^\w\s]/gi, '').split(/\s+/)
+                    ? text.toLowerCase().replace(/[^\w\s]/gi, '').split(/\s+/) 
                     : text.split('')
                 ).map(token => {
                     const tokenIndex = index[token.toLowerCase()];
+                    // For SMS, the word_index from Keras is 1-based and 0,1,2 are reserved.
+                    // For URL chars, we can assume a simpler 0-based index.
                     return type === 'sms' ? (tokenIndex ? tokenIndex + 3 : 2) : (tokenIndex || 0);
                 });
 
+                // Padding and truncating
                 const paddedSequence = Array(maxLen).fill(0);
-                const start = Math.max(0, maxLen - sequence.length);
+                const start = Math.max(0, maxLen - sequence.length); // Right-align sequence
                 for (let i = 0; i < Math.min(sequence.length, maxLen); i++) {
                     paddedSequence[start + i] = sequence[i];
                 }
+                
                 return tf.tensor2d([paddedSequence]);
             }
 
@@ -265,9 +270,13 @@
                     
                     if (selectedModelType === 'sms') {
                         tensor = preprocess(text, smsIndex, SMS_MODEL_CONFIG.maxLen, 'sms');
+                        // ✨ SANITY CHECK: Log the tensor shape to the console for debugging
+                        console.log(`Input tensor shape for SMS: ${tensor.shape}`);
                         prediction = await smsModel.predict(tensor).data();
                     } else {
                         tensor = preprocess(text, urlIndex, URL_MODEL_CONFIG.maxLen, 'url');
+                        // ✨ SANITY CHECK: Log the tensor shape to the console for debugging
+                        console.log(`Input tensor shape for URL: ${tensor.shape}`);
                         prediction = await urlModel.predict(tensor).data();
                     }
                     updateResultUI(prediction[0]);
@@ -277,7 +286,7 @@
                 } finally {
                     ui.btnText.textContent = "Analyze";
                     ui.analyzeBtn.disabled = false;
-                    tf.disposeVariables();
+                    tf.disposeVariables(); // Clean up tensor memory
                 }
             }
 
@@ -289,7 +298,7 @@
                 ui.predictionText.className = `text-4xl font-bold font-orbitron ${isSpam ? 'text-red-400 neon-text-secondary' : 'text-green-400 neon-text-primary'}`;
                 ui.confidenceScore.textContent = `${percentage}%`;
                 
-                const circumference = 100;
+                const circumference = 100; // Corresponds to the path length of the gauge
                 ui.resultGauge.style.strokeDasharray = `${score * circumference}, ${circumference}`;
                 
                 ui.resultSection.classList.remove('hidden');
