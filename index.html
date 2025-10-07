@@ -187,8 +187,8 @@
         document.addEventListener('DOMContentLoaded', () => {
             // --- CONFIGURATION ---
             const MODELS_PATH = 'models/';
-            const SMS_MODEL_CONFIG = { modelUrl: MODELS_PATH + 'sms_model.json', indexUrl: MODELS_PATH + 'sms_word_index.json', maxLen: 150, type: 'sms' };
-            const URL_MODEL_CONFIG = { modelUrl: MODELS_PATH + 'url_model.json', indexUrl: MODELS_PATH + 'url_char_index.json', maxLen: 200, type: 'url' };
+            const SMS_MODEL_CONFIG = { weightsUrl: MODELS_PATH + 'sms_model.bin', indexUrl: MODELS_PATH + 'sms_word_index.json', maxLen: 150, vocabSize: 10000, embeddingDim: 16, type: 'sms' };
+            const URL_MODEL_CONFIG = { weightsUrl: MODELS_PATH + 'url_model.bin', indexUrl: MODELS_PATH + 'url_char_index.json', maxLen: 200, vocabSize: 128, embeddingDim: 16, type: 'url' };
 
             // --- GLOBAL STATE ---
             let smsModel, urlModel, smsIndex, urlIndex;
@@ -208,40 +208,68 @@
                 tabContents: document.querySelectorAll('.tab-content')
             };
 
-            // --- CORE FUNCTIONS ---
-            async function loadModelAndIndex(config) {
-                console.log(`Attempting to load ${config.type.toUpperCase()} model from ${config.modelUrl}`);
+            // --- ✨ NATIVE JS MODEL CREATION ---
+            function createSmsModel() {
+                const model = tf.sequential();
+                model.add(tf.layers.embedding({
+                    inputDim: SMS_MODEL_CONFIG.vocabSize,
+                    outputDim: SMS_MODEL_CONFIG.embeddingDim,
+                    inputLength: SMS_MODEL_CONFIG.maxLen
+                }));
+                model.add(tf.layers.globalAveragePooling1d());
+                model.add(tf.layers.dense({ units: 24, activation: 'relu' }));
+                model.add(tf.layers.dropout({ rate: 0.2 }));
+                model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+                return model;
+            }
+
+            function createUrlModel() {
+                const model = tf.sequential();
+                model.add(tf.layers.embedding({
+                    inputDim: URL_MODEL_CONFIG.vocabSize,
+                    outputDim: URL_MODEL_CONFIG.embeddingDim,
+                    inputLength: URL_MODEL_CONFIG.maxLen
+                }));
+                model.add(tf.layers.globalAveragePooling1d());
+                model.add(tf.layers.dense({ units: 24, activation: 'relu' }));
+                model.add(tf.layers.dropout({ rate: 0.2 }));
+                model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+                return model;
+            }
+
+            // --- ✨ REWRITTEN LOADING FUNCTION ---
+            async function loadModelAndIndex(config, modelCreationFn) {
+                console.log(`Creating ${config.type.toUpperCase()} model structure in JS.`);
+                const model = modelCreationFn();
+                
+                console.log(`Attempting to load ${config.type.toUpperCase()} assets...`);
                 try {
-                    const [model, indexData] = await Promise.all([
-                        tf.loadLayersModel(config.modelUrl),
+                    const [weights, indexData] = await Promise.all([
+                        model.loadWeights(config.weightsUrl),
                         fetch(config.indexUrl).then(res => {
                             if (!res.ok) throw new Error(`HTTP error! status: ${res.status} for ${config.indexUrl}`);
                             return res.json();
                         })
                     ]);
-                    console.log(`${config.type.toUpperCase()} model and index loaded successfully.`);
+                    console.log(`✅ ${config.type.toUpperCase()} model weights and index loaded successfully.`);
                     return [model, indexData];
                 } catch (error) {
                     console.error(`Error loading ${config.type.toUpperCase()} assets:`, error);
-                    throw new Error(`Failed to load ${config.type.toUpperCase()} assets. Check model files, network, and ensure model was saved correctly (using the Functional API is recommended).`);
+                    throw new Error(`Failed to load ${config.type.toUpperCase()} assets. Check .bin and .json files are in the /models folder.`);
                 }
             }
-
+            
             function preprocess(text, index, maxLen, type) {
-                // Word-based for SMS, character-based for URLs
                 const sequence = (type === 'sms' 
                     ? text.toLowerCase().replace(/[^\w\s]/gi, '').split(/\s+/) 
                     : text.split('')
                 ).map(token => {
                     const tokenIndex = index[token.toLowerCase()];
-                    // For SMS, the word_index from Keras is 1-based and 0,1,2 are reserved.
-                    // For URL chars, we can assume a simpler 0-based index.
-                    return type === 'sms' ? (tokenIndex ? tokenIndex + 3 : 2) : (tokenIndex || 0);
+                    return tokenIndex || 2; // Use OOV token index if not found
                 });
 
-                // Padding and truncating
                 const paddedSequence = Array(maxLen).fill(0);
-                const start = Math.max(0, maxLen - sequence.length); // Right-align sequence
+                const start = Math.max(0, maxLen - sequence.length);
                 for (let i = 0; i < Math.min(sequence.length, maxLen); i++) {
                     paddedSequence[start + i] = sequence[i];
                 }
@@ -270,13 +298,9 @@
                     
                     if (selectedModelType === 'sms') {
                         tensor = preprocess(text, smsIndex, SMS_MODEL_CONFIG.maxLen, 'sms');
-                        // ✨ SANITY CHECK: Log the tensor shape to the console for debugging
-                        console.log(`Input tensor shape for SMS: ${tensor.shape}`);
                         prediction = await smsModel.predict(tensor).data();
                     } else {
                         tensor = preprocess(text, urlIndex, URL_MODEL_CONFIG.maxLen, 'url');
-                        // ✨ SANITY CHECK: Log the tensor shape to the console for debugging
-                        console.log(`Input tensor shape for URL: ${tensor.shape}`);
                         prediction = await urlModel.predict(tensor).data();
                     }
                     updateResultUI(prediction[0]);
@@ -286,7 +310,7 @@
                 } finally {
                     ui.btnText.textContent = "Analyze";
                     ui.analyzeBtn.disabled = false;
-                    tf.disposeVariables(); // Clean up tensor memory
+                    tf.disposeVariables();
                 }
             }
 
@@ -298,13 +322,12 @@
                 ui.predictionText.className = `text-4xl font-bold font-orbitron ${isSpam ? 'text-red-400 neon-text-secondary' : 'text-green-400 neon-text-primary'}`;
                 ui.confidenceScore.textContent = `${percentage}%`;
                 
-                const circumference = 100; // Corresponds to the path length of the gauge
+                const circumference = 100;
                 ui.resultGauge.style.strokeDasharray = `${score * circumference}, ${circumference}`;
                 
                 ui.resultSection.classList.remove('hidden');
             }
 
-            // --- EVENT LISTENERS ---
             ui.analyzeBtn.addEventListener('click', analyze);
 
             ui.modelSelector.addEventListener('change', (e) => {
@@ -326,15 +349,15 @@
                 });
             });
 
-            // --- INITIALIZATION ---
             async function main() {
                 ui.analyzeBtn.disabled = true;
                 ui.statusMessage.textContent = 'Loading AI models, please wait...';
                 
                 try {
+                    // ✨ LOAD MODELS USING THE NEW NATIVE METHOD
                     const [[smsM, smsI], [urlM, urlI]] = await Promise.all([
-                        loadModelAndIndex(SMS_MODEL_CONFIG),
-                        loadModelAndIndex(URL_MODEL_CONFIG)
+                        loadModelAndIndex(SMS_MODEL_CONFIG, createSmsModel),
+                        loadModelAndIndex(URL_MODEL_CONFIG, createUrlModel)
                     ]);
                     
                     smsModel = smsM;
