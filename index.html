@@ -9,13 +9,86 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- TensorFlow.js (Pinned Version) -->
+    <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
     
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+
+    <!-- ✨ 1. EMBEDDED NPY Parser Library (DEFINITIVE FIX) ✨ -->
+    <script>
+        // Robust npyjs parser for .npy files (supports v1.0 and v2.0, little-endian, C-order)
+        var npyjs = function () { };
+        npyjs.prototype.parse = function (buffer) {
+            var view = new DataView(buffer);
+            // Check magic string
+            if (view.getUint8(0) !== 0x93 || String.fromCharCode.apply(null, new Uint8Array(buffer, 1, 5)) !== 'NUMPY') {
+                throw new Error('Not a numpy file');
+            }
+            var major = view.getUint8(6);
+            var minor = view.getUint8(7);
+            var headerLen;
+            if (major === 1) {
+                headerLen = view.getUint16(8, true);
+                var offset = 10;
+            } else if (major === 2) {
+                headerLen = view.getUint32(8, true);
+                var offset = 12;
+            } else {
+                throw new Error('Unsupported npy version');
+            }
+            var headerText = String.fromCharCode.apply(null, new Uint8Array(buffer, offset, headerLen));
+            // Parse header dict
+            var header = headerText
+                .replace(/'/g, '"')
+                .replace('False', 'false')
+                .replace('True', 'true')
+                .replace('(', '[')
+                .replace('),', ']')
+                .replace(')', ']')
+                .replace(/,\s*]/g, ']');
+            var info = JSON.parse(header.match(/\{.*\}/s)[0]);
+            var shape = info.shape;
+            var fortran_order = info.fortran_order;
+            var descr = info.descr;
+            var littleEndian = descr[0] === '<' || descr[0] === '|';
+            var dtype = descr.slice(1);
+            var nItems = shape.reduce((a, b) => a * b, 1);
+            var arrayOffset = offset + headerLen;
+            var arr;
+            if (dtype === 'f4') {
+                arr = new Float32Array(buffer, arrayOffset, nItems);
+            } else if (dtype === 'f8') {
+                arr = new Float64Array(buffer, arrayOffset, nItems);
+            } else if (dtype === 'i4') {
+                arr = new Int32Array(buffer, arrayOffset, nItems);
+            } else if (dtype === 'u4') {
+                arr = new Uint32Array(buffer, arrayOffset, nItems);
+            } else if (dtype === 'i2') {
+                arr = new Int16Array(buffer, arrayOffset, nItems);
+            } else if (dtype === 'u2') {
+                arr = new Uint16Array(buffer, arrayOffset, nItems);
+            } else if (dtype === 'i1') {
+                arr = new Int8Array(buffer, arrayOffset, nItems);
+            } else if (dtype === 'u1') {
+                arr = new Uint8Array(buffer, arrayOffset, nItems);
+            } else {
+                throw new Error('Unsupported dtype: ' + descr);
+            }
+            // If fortran_order, need to transpose (not supported here)
+            if (fortran_order) {
+                throw new Error('Fortran order arrays not supported');
+            }
+            return { data: arr, shape: shape, dtype: descr };
+        };
+        if (typeof module !== "undefined" && typeof module.exports !== "undefined") {
+            module.exports = npyjs;
+        } else {
+            window.npyjs = npyjs;
+        }
+    </script>
 
     <style>
         :root {
@@ -73,127 +146,99 @@
             box-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
         }
         #resultGauge { transition: stroke-dashoffset 1s ease-in-out; }
-        .tab {
-            cursor: pointer;
-            transition: all 0.3s;
-            border-bottom: 2px solid transparent;
-            padding-bottom: 4px;
-        }
-        .tab.active, .tab:hover {
-            color: var(--glow-color-primary);
-            border-bottom-color: var(--glow-color-primary);
-            text-shadow: 0 0 8px var(--glow-color-primary);
-        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4">
 
     <div class="w-full max-w-4xl mx-auto">
-        <!-- Header -->
         <header class="text-center mb-8">
             <h1 class="text-4xl md:text-5xl font-orbitron font-bold neon-text-primary">SpamGuard AI</h1>
             <p class="text-gray-400 mt-2">Client-Side AI-Powered Spam Detection</p>
         </header>
 
-        <!-- Tabs -->
-        <nav class="flex justify-center space-x-8 mb-8 font-orbitron text-lg text-gray-400">
-            <a class="tab active" data-tab="home">Classifier</a>
-            <a class="tab" data-tab="about">About</a>
-            <a class="tab" data-tab="device">Add to Device</a>
-        </nav>
-
-        <!-- Main Content -->
         <main>
-            <!-- Home/Classifier Tab -->
-            <div id="home-content" class="tab-content">
-                <div class="glass-card glow-border p-6 md:p-8">
-                    <div class="mb-6">
-                        <h2 class="text-xl font-semibold mb-3 text-center">Select Analysis Type</h2>
-                        <div id="modelSelector" class="grid grid-cols-2 gap-4">
-                            <input type="radio" name="modelType" id="sms" value="sms" class="hidden" checked>
-                            <label for="sms" class="radio-label p-4 text-center rounded-lg cursor-pointer flex flex-col items-center justify-center">
-                                <span class="text-3xl">💬</span>
-                                <span class="block mt-2 font-semibold">Analyze SMS</span>
-                            </label>
+            <div class="glass-card glow-border p-6 md:p-8">
+                <div class="mb-6">
+                    <h2 class="text-xl font-semibold mb-3 text-center">Select Analysis Type</h2>
+                    <div id="modelSelector" class="grid grid-cols-2 gap-4">
+                        <input type="radio" name="modelType" id="sms" value="sms" class="hidden" checked>
+                        <label for="sms" class="radio-label p-4 text-center rounded-lg cursor-pointer flex flex-col items-center justify-center">
+                            <span class="text-3xl">💬</span>
+                            <span class="block mt-2 font-semibold">Analyze SMS</span>
+                        </label>
 
-                            <input type="radio" name="modelType" id="url" value="url" class="hidden">
-                            <label for="url" class="radio-label p-4 text-center rounded-lg cursor-pointer flex flex-col items-center justify-center">
-                                <span class="text-3xl">🔗</span>
-                                <span class="block mt-2 font-semibold">Analyze URL</span>
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-6">
-                        <textarea id="inputText" class="w-full h-32 p-3 bg-gray-900/50 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 transition" placeholder="Enter SMS message here..."></textarea>
-                    </div>
-
-                    <div class="text-center">
-                        <button id="analyzeBtn" class="btn-primary text-white font-bold py-3 px-8 rounded-full text-lg font-orbitron w-full md:w-auto">
-                            <span id="btn-text">Load Models...</span>
-                        </button>
-                    </div>
-
-                    <div id="statusMessage" class="text-center mt-4 text-gray-400 min-h-[1.5rem]"></div>
-                </div>
-
-                <!-- Result Display -->
-                <div id="resultSection" class="glass-card p-6 md:p-8 mt-8 hidden">
-                    <h2 class="text-2xl font-orbitron text-center mb-6">Analysis Result</h2>
-                    <div class="flex flex-col md:flex-row items-center justify-center gap-8">
-                        <div class="relative w-48 h-48">
-                            <svg class="w-full h-full" viewBox="0 0 36 36">
-                                <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#374151" stroke-width="3" />
-                                <path id="resultGauge" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="url(#gradient)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0, 100" />
-                                <defs><linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#34D399;" /><stop offset="50%" style="stop-color:#FBBF24;" /><stop offset="100%" style="stop-color:#F87171;" /></linearGradient></defs>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center">
-                                <span id="confidenceScore" class="text-4xl font-orbitron font-bold">0%</span>
-                            </div>
-                        </div>
-                        <div class="text-center md:text-left">
-                            <p class="text-gray-400 text-lg">Classification:</p>
-                            <p id="predictionText" class="text-4xl font-bold font-orbitron">---</p>
-                        </div>
+                        <input type="radio" name="modelType" id="url" value="url" class="hidden">
+                        <label for="url" class="radio-label p-4 text-center rounded-lg cursor-pointer flex flex-col items-center justify-center">
+                            <span class="text-3xl">🔗</span>
+                            <span class="block mt-2 font-semibold">Analyze URL</span>
+                        </label>
                     </div>
                 </div>
+                
+                <div class="mb-6">
+                    <textarea id="inputText" class="w-full h-32 p-3 bg-gray-900/50 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 transition" placeholder="Enter SMS message here..."></textarea>
+                </div>
+
+                <div class="text-center">
+                    <button id="analyzeBtn" class="btn-primary text-white font-bold py-3 px-8 rounded-full text-lg font-orbitron w-full md:w-auto">
+                        <span id="btn-text">Load Models...</span>
+                    </button>
+                </div>
+
+                <div id="statusMessage" class="text-center mt-4 text-gray-400 min-h-[1.5rem]"></div>
             </div>
 
-            <!-- About Tab -->
-            <div id="about-content" class="tab-content hidden glass-card p-6 md:p-8">
-                <h2 class="text-2xl font-orbitron mb-4">About SpamGuard AI</h2>
-                <p class="text-gray-300 leading-relaxed mb-4">SpamGuard AI is a demonstration of the power of edge computing and machine learning in the browser. By leveraging TensorFlow.js, we can run sophisticated deep learning models directly on your device.</p>
-                <p class="text-gray-300 leading-relaxed font-semibold">Key Principles:</p>
-                <ul class="list-disc list-inside text-gray-300 leading-relaxed mt-2 space-y-2">
-                    <li><strong class="text-cyan-400">Privacy First:</strong> Your data is never uploaded, sent, or stored anywhere. All processing is done locally.</li>
-                    <li><strong class="text-cyan-400">Accessibility:</strong> Works on any modern browser, on desktop or mobile, without needing powerful hardware.</li>
-                    <li><strong class="text-cyan-400">Dual Models:</strong> Utilizes two distinct, expertly trained models—one for the nuances of SMS language and another for the structural patterns of malicious URLs.</li>
-                </ul>
-            </div>
-            
-            <!-- Add to Device Tab -->
-            <div id="device-content" class="tab-content hidden glass-card p-6 md:p-8 text-center">
-                <h2 class="text-2xl font-orbitron mb-4">Add to Your Device</h2>
-                <p class="text-gray-300 leading-relaxed mb-6">For quick access, you can add SpamGuard AI to your home screen. This works best on mobile browsers that support Progressive Web Apps (PWAs).</p>
-                <div class="bg-gray-900/50 p-4 rounded-lg">
-                    <p class="font-semibold">On Mobile (Chrome/Safari):</p>
-                    <p class="text-sm text-gray-400">Tap the 'Share' or 'Settings' icon in your browser and select 'Add to Home Screen'.</p>
+            <div id="resultSection" class="glass-card p-6 md:p-8 mt-8 hidden">
+                <h2 class="text-2xl font-orbitron text-center mb-6">Analysis Result</h2>
+                <div class="flex flex-col md:flex-row items-center justify-center gap-8">
+                    <div class="relative w-48 h-48">
+                        <svg class="w-full h-full" viewBox="0 0 36 36">
+                            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#374151" stroke-width="3" />
+                            <path id="resultGauge" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="url(#gradient)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0, 100" />
+                            <defs><linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#34D399;" /><stop offset="50%" style="stop-color:#FBBF24;" /><stop offset="100%" style="stop-color:#F87171;" /></linearGradient></defs>
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <span id="confidenceScore" class="text-4xl font-orbitron font-bold">0%</span>
+                        </div>
+                    </div>
+                    <div class="text-center md:text-left">
+                        <p class="text-gray-400 text-lg">Classification:</p>
+                        <p id="predictionText" class="text-4xl font-bold font-orbitron">---</p>
+                    </div>
                 </div>
             </div>
         </main>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // --- CONFIGURATION ---
-            const MODELS_PATH = 'models/';
-            const SMS_MODEL_CONFIG = { weightsUrl: MODELS_PATH + 'sms_model.bin', indexUrl: MODELS_PATH + 'sms_word_index.json', maxLen: 150, vocabSize: 10000, embeddingDim: 16, type: 'sms' };
-            const URL_MODEL_CONFIG = { weightsUrl: MODELS_PATH + 'url_model.bin', indexUrl: MODELS_PATH + 'url_char_index.json', maxLen: 200, vocabSize: 128, embeddingDim: 16, type: 'url' };
+        document.addEventListener('DOMContentLoaded', async () => {
+            const npy = new npyjs(); // This will now work because the library is embedded.
 
-            // --- GLOBAL STATE ---
+            const SMS_CONFIG = {
+                indexUrl: 'models/sms_word_index.json',
+                maxLen: 150,
+                vocabSize: 10000,
+                embeddingDim: 16,
+                weightFiles: [
+                    'models/embedding_sms_0.npy',
+                    'models/dense_1_sms_0.npy', 'models/dense_1_sms_1.npy',
+                    'models/output_sms_0.npy', 'models/output_sms_1.npy'
+                ]
+            };
+
+            const URL_CONFIG = {
+                indexUrl: 'models/url_char_index.json',
+                maxLen: 200,
+                vocabSize: 128,
+                embeddingDim: 16,
+                weightFiles: [
+                    'models/embedding_url_0.npy',
+                    'models/dense_1_url_0.npy', 'models/dense_1_url_1.npy',
+                    'models/output_url_0.npy', 'models/output_url_1.npy'
+                ]
+            };
+
             let smsModel, urlModel, smsIndex, urlIndex;
-
-            // --- UI ELEMENTS ---
             const ui = {
                 analyzeBtn: document.getElementById('analyzeBtn'),
                 btnText: document.getElementById('btn-text'),
@@ -203,19 +248,12 @@
                 predictionText: document.getElementById('predictionText'),
                 confidenceScore: document.getElementById('confidenceScore'),
                 resultGauge: document.getElementById('resultGauge'),
-                modelSelector: document.getElementById('modelSelector'),
-                tabs: document.querySelectorAll('.tab'),
-                tabContents: document.querySelectorAll('.tab-content')
+                modelSelector: document.getElementById('modelSelector')
             };
 
-            // --- ✨ NATIVE JS MODEL CREATION ---
-            function createSmsModel() {
+            function createModel(config) {
                 const model = tf.sequential();
-                model.add(tf.layers.embedding({
-                    inputDim: SMS_MODEL_CONFIG.vocabSize,
-                    outputDim: SMS_MODEL_CONFIG.embeddingDim,
-                    inputLength: SMS_MODEL_CONFIG.maxLen
-                }));
+                model.add(tf.layers.embedding({ inputDim: config.vocabSize, outputDim: config.embeddingDim, inputLength: config.maxLen }));
                 model.add(tf.layers.globalAveragePooling1d());
                 model.add(tf.layers.dense({ units: 24, activation: 'relu' }));
                 model.add(tf.layers.dropout({ rate: 0.2 }));
@@ -223,87 +261,94 @@
                 return model;
             }
 
-            function createUrlModel() {
-                const model = tf.sequential();
-                model.add(tf.layers.embedding({
-                    inputDim: URL_MODEL_CONFIG.vocabSize,
-                    outputDim: URL_MODEL_CONFIG.embeddingDim,
-                    inputLength: URL_MODEL_CONFIG.maxLen
-                }));
-                model.add(tf.layers.globalAveragePooling1d());
-                model.add(tf.layers.dense({ units: 24, activation: 'relu' }));
-                model.add(tf.layers.dropout({ rate: 0.2 }));
-                model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
-                return model;
-            }
+            // ✨ 2. REWRITTEN loadModel FUNCTION (DEFINITIVE FIX) ✨
+            async function loadModel(config) {
+                console.log(`Loading model for: ${config.indexUrl}`);
+                const model = createModel(config);
 
-            // --- ✨ REWRITTEN LOADING FUNCTION ---
-            async function loadModelAndIndex(config, modelCreationFn) {
-                console.log(`Creating ${config.type.toUpperCase()} model structure in JS.`);
-                const model = modelCreationFn();
+                // Fetch index and all npy files as array buffers in parallel
+                const [indexData, ...weightBuffers] = await Promise.all([
+                    fetch(config.indexUrl).then(res => res.json()),
+                    ...config.weightFiles.map(url => fetch(url).then(res => {
+                        if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.statusText}`);
+                        return res.arrayBuffer();
+                    }))
+                ]);
                 
-                console.log(`Attempting to load ${config.type.toUpperCase()} assets...`);
-                try {
-                    const [weights, indexData] = await Promise.all([
-                        model.loadWeights(config.weightsUrl),
-                        fetch(config.indexUrl).then(res => {
-                            if (!res.ok) throw new Error(`HTTP error! status: ${res.status} for ${config.indexUrl}`);
-                            return res.json();
-                        })
-                    ]);
-                    console.log(`✅ ${config.type.toUpperCase()} model weights and index loaded successfully.`);
-                    return [model, indexData];
-                } catch (error) {
-                    console.error(`Error loading ${config.type.toUpperCase()} assets:`, error);
-                    throw new Error(`Failed to load ${config.type.toUpperCase()} assets. Check .bin and .json files are in the /models folder.`);
-                }
+                // Parse the array buffers into tensors synchronously
+                const npyToTfDtype = {
+                    '<f4': 'float32',
+                    '|f4': 'float32',
+                    '<f8': 'float64',
+                    '|f8': 'float64',
+                    '<i4': 'int32',
+                    '|i4': 'int32',
+                    '<u4': 'int32', // tfjs does not support uint32, fallback to int32
+                    '|u4': 'int32',
+                    '<i2': 'int32',
+                    '|i2': 'int32',
+                    '<u2': 'int32',
+                    '|u2': 'int32',
+                    '<i1': 'int32',
+                    '|i1': 'int32',
+                    '<u1': 'int32',
+                    '|u1': 'int32'
+                };
+                const weightTensors = config.weightFiles.map((file, i) => {
+                    const buffer = weightBuffers[i];
+                    const result = npy.parse(buffer);
+                    // Map npy dtype to tfjs dtype
+                    const tfDtype = npyToTfDtype[result.dtype] || 'float32';
+                    return tf.tensor(result.data, result.shape, tfDtype);
+                });
+
+                model.setWeights(weightTensors);
+                console.log(`✅ Model loaded successfully: ${config.indexUrl}`);
+                return [model, indexData];
             }
             
             function preprocess(text, index, maxLen, type) {
                 const sequence = (type === 'sms' 
                     ? text.toLowerCase().replace(/[^\w\s]/gi, '').split(/\s+/) 
                     : text.split('')
-                ).map(token => {
-                    const tokenIndex = index[token.toLowerCase()];
-                    return tokenIndex || 2; // Use OOV token index if not found
-                });
+                ).map(token => index[token.toLowerCase()] || 2); // OOV token
 
                 const paddedSequence = Array(maxLen).fill(0);
                 const start = Math.max(0, maxLen - sequence.length);
                 for (let i = 0; i < Math.min(sequence.length, maxLen); i++) {
                     paddedSequence[start + i] = sequence[i];
                 }
-                
                 return tf.tensor2d([paddedSequence]);
             }
 
             async function analyze() {
                 const selectedModelType = document.querySelector('input[name="modelType"]:checked').value;
                 const text = ui.inputText.value;
-
-                if (!text.trim()) {
-                    ui.statusMessage.textContent = "Please enter text or a URL to analyze.";
-                    return;
-                }
-
+                if (!text.trim()) { ui.statusMessage.textContent = "Please enter text."; return; }
+                
                 ui.btnText.textContent = "Analyzing...";
                 ui.analyzeBtn.disabled = true;
-                ui.statusMessage.textContent = "";
                 ui.resultSection.classList.add('hidden');
 
                 await new Promise(resolve => setTimeout(resolve, 50));
 
                 try {
-                    let prediction, tensor;
+                    const isSms = selectedModelType === 'sms';
+                    const model = isSms ? smsModel : urlModel;
+                    const index = isSms ? smsIndex : urlIndex;
+                    const maxLen = isSms ? SMS_CONFIG.maxLen : URL_CONFIG.maxLen;
                     
-                    if (selectedModelType === 'sms') {
-                        tensor = preprocess(text, smsIndex, SMS_MODEL_CONFIG.maxLen, 'sms');
-                        prediction = await smsModel.predict(tensor).data();
-                    } else {
-                        tensor = preprocess(text, urlIndex, URL_MODEL_CONFIG.maxLen, 'url');
-                        prediction = await urlModel.predict(tensor).data();
-                    }
-                    updateResultUI(prediction[0]);
+                    const tensor = preprocess(text, index, maxLen, selectedModelType);
+                    const prediction = await model.predict(tensor).data();
+                    
+                    const score = prediction[0];
+                    const isSpam = score > 0.5;
+                    ui.predictionText.textContent = isSpam ? "SPAM DETECTED" : "Looks Safe";
+                    ui.predictionText.className = `text-4xl font-bold font-orbitron ${isSpam ? 'text-red-400 neon-text-secondary' : 'text-green-400 neon-text-primary'}`;
+                    ui.confidenceScore.textContent = `${Math.round(score * 100)}%`;
+                    ui.resultGauge.style.strokeDasharray = `${score * 100}, 100`;
+                    ui.resultSection.classList.remove('hidden');
+
                 } catch (error) {
                     console.error("Analysis error:", error);
                     ui.statusMessage.textContent = "An error occurred during analysis.";
@@ -313,74 +358,30 @@
                     tf.disposeVariables();
                 }
             }
-
-            function updateResultUI(score) {
-                const isSpam = score > 0.5;
-                const percentage = Math.round(score * 100);
-                
-                ui.predictionText.textContent = isSpam ? "SPAM DETECTED" : "Looks Safe";
-                ui.predictionText.className = `text-4xl font-bold font-orbitron ${isSpam ? 'text-red-400 neon-text-secondary' : 'text-green-400 neon-text-primary'}`;
-                ui.confidenceScore.textContent = `${percentage}%`;
-                
-                const circumference = 100;
-                ui.resultGauge.style.strokeDasharray = `${score * circumference}, ${circumference}`;
-                
-                ui.resultSection.classList.remove('hidden');
-            }
-
+            
             ui.analyzeBtn.addEventListener('click', analyze);
-
             ui.modelSelector.addEventListener('change', (e) => {
-                ui.inputText.placeholder = e.target.value === 'sms' 
-                    ? 'Enter SMS message here...' 
-                    : 'Enter a full URL (e.g., https://example.com) here...';
-                ui.resultSection.classList.add('hidden');
-                ui.statusMessage.textContent = "";
+                ui.inputText.placeholder = e.target.value === 'sms' ? 'Enter SMS message...' : 'Enter a full URL...';
             });
-
-            ui.tabs.forEach(tab => {
-                tab.addEventListener('click', (e) => {
-                    ui.tabs.forEach(t => t.classList.remove('active'));
-                    e.target.classList.add('active');
-                    const targetContentId = `${e.target.dataset.tab}-content`;
-                    ui.tabContents.forEach(content => {
-                        content.classList.toggle('hidden', content.id !== targetContentId);
-                    });
-                });
-            });
-
+            
             async function main() {
                 ui.analyzeBtn.disabled = true;
                 ui.statusMessage.textContent = 'Loading AI models, please wait...';
-                
                 try {
-                    // ✨ LOAD MODELS USING THE NEW NATIVE METHOD
-                    const [[smsM, smsI], [urlM, urlI]] = await Promise.all([
-                        loadModelAndIndex(SMS_MODEL_CONFIG, createSmsModel),
-                        loadModelAndIndex(URL_MODEL_CONFIG, createUrlModel)
+                    [[smsModel, smsIndex], [urlModel, urlIndex]] = await Promise.all([
+                        loadModel(SMS_CONFIG),
+                        loadModel(URL_CONFIG)
                     ]);
-                    
-                    smsModel = smsM;
-                    smsIndex = smsI;
-                    urlModel = urlM;
-                    urlIndex = urlI;
-
                     ui.statusMessage.textContent = 'Models loaded. Ready for analysis.';
                     ui.btnText.textContent = "Analyze";
                     ui.analyzeBtn.disabled = false;
-                    
-                    setTimeout(() => {
-                        if (ui.statusMessage.textContent === 'Models loaded. Ready for analysis.') {
-                            ui.statusMessage.textContent = '';
-                        }
-                    }, 3000);
+                    setTimeout(() => { if (ui.statusMessage.textContent.includes('Ready')) ui.statusMessage.textContent = ''; }, 3000);
                 } catch (error) {
-                    console.error("Initialization failed:", error.message);
-                    ui.statusMessage.textContent = error.message;
-                    ui.btnText.textContent = "Initialization Error";
+                    console.error("Initialization failed:", error);
+                    ui.statusMessage.textContent = "Initialization Error. Check console for details.";
+                    ui.btnText.textContent = "Error";
                 }
             }
-            
             main();
         });
     </script>
