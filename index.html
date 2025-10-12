@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SpamGuard AI - Client-Side Spam Classifier</title>
+    <title>SpamClassifier AI - Client-Side Spam Classifier</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com" Immersive content redacted for brevity.
+
+></script>
     
     <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
@@ -17,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
 
-    <!-- ✨ 1. EMBEDDED NPY Parser Library (DEFINITIVE FIX) ✨ -->
+    <!-- ✨ 1. EMBEDDED NPY Parser Library  -->
     <script>
         // Robust npyjs parser for .npy files (supports v1.0 and v2.0, little-endian, C-order)
         var npyjs = function () { };
@@ -146,68 +148,133 @@
             box-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
         }
         #resultGauge { transition: stroke-dashoffset 1s ease-in-out; }
+           .tab {
+            cursor: pointer;
+            transition: all 0.3s;
+            border-bottom: 2px solid transparent;
+            padding-bottom: 4px;
+        }
+        .tab.active, .tab:hover {
+            color: var(--glow-color-primary);
+            border-bottom-color: var(--glow-color-primary);
+            text-shadow: 0 0 8px var(--glow-color-primary);
+        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4">
 
     <div class="w-full max-w-4xl mx-auto">
         <header class="text-center mb-8">
-            <h1 class="text-4xl md:text-5xl font-orbitron font-bold neon-text-primary">SpamGuard AI</h1>
-            <p class="text-gray-400 mt-2">Client-Side AI-Powered Spam Detection</p>
+            <h1 class="text-4xl md:text-5xl font-orbitron font-bold neon-text-primary">SpamClassifier AI</h1>
+            <p class="text-gray-400 mt-2">Privacy first AI-powered Spam Detection</p>
         </header>
+        <!-- Tabs -->
+        <nav class="flex justify-center space-x-8 mb-8 font-orbitron text-lg text-gray-400">
+            <a class="tab active" data-tab="home">Classifier</a>
+            <a class="tab" data-tab="about">About</a>
+            <a class="tab" data-tab="device">Add to Device</a>
+        </nav>
 
-        <main>
-            <div class="glass-card glow-border p-6 md:p-8">
-                <div class="mb-6">
-                    <h2 class="text-xl font-semibold mb-3 text-center">Select Analysis Type</h2>
-                    <div id="modelSelector" class="grid grid-cols-2 gap-4">
-                        <input type="radio" name="modelType" id="sms" value="sms" class="hidden" checked>
-                        <label for="sms" class="radio-label p-4 text-center rounded-lg cursor-pointer flex flex-col items-center justify-center">
-                            <span class="text-3xl">💬</span>
-                            <span class="block mt-2 font-semibold">Analyze SMS</span>
-                        </label>
+      <main>
+         <div id="home-content" class="tab-content">
+             <div class="glass-card glow-border p-6 md:p-8">
+                 <div class="mb-6">
+                     <h2 class="text-xl font-semibold mb-3 text-center">Select Analysis Type</h2>
+                     <div id="modelSelector" class="grid grid-cols-2 gap-4">
+                         <input type="radio" name="modelType" id="sms" value="sms" class="hidden" checked>
+                         <label for="sms" class="radio-label p-4 text-center rounded-lg cursor-pointer flex flex-col items-center justify-center">
+                             <span class="text-3xl">💬</span>
+                             <span class="block mt-2 font-semibold">Analyze SMS</span>
+                         </label>
 
-                        <input type="radio" name="modelType" id="url" value="url" class="hidden">
-                        <label for="url" class="radio-label p-4 text-center rounded-lg cursor-pointer flex flex-col items-center justify-center">
-                            <span class="text-3xl">🔗</span>
-                            <span class="block mt-2 font-semibold">Analyze URL</span>
-                        </label>
-                    </div>
-                </div>
+                         <input type="radio" name="modelType" id="url" value="url" class="hidden">
+                         <label for="url" class="radio-label p-4 text-center rounded-lg cursor-pointer flex flex-col items-center justify-center">
+                             <span class="text-3xl">🔗</span>
+                             <span class="block mt-2 font-semibold">Analyze URL</span>
+                         </label>
+                     </div>
+                 </div>
                 
-                <div class="mb-6">
+                  <div class="mb-6">
                     <textarea id="inputText" class="w-full h-32 p-3 bg-gray-900/50 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 transition" placeholder="Enter SMS message here..."></textarea>
-                </div>
+                  </div>
 
-                <div class="text-center">
-                    <button id="analyzeBtn" class="btn-primary text-white font-bold py-3 px-8 rounded-full text-lg font-orbitron w-full md:w-auto">
-                        <span id="btn-text">Load Models...</span>
-                    </button>
-                </div>
+                 <div class="text-center">
+                     <button id="analyzeBtn" class="btn-primary text-white font-bold py-3 px-8 rounded-full text-lg font-orbitron w-full md:w-auto">
+                         <span id="btn-text">Load Models...</span>
+                     </button>
+                 </div>
 
-                <div id="statusMessage" class="text-center mt-4 text-gray-400 min-h-[1.5rem]"></div>
-            </div>
+                 <div id="statusMessage" class="text-center mt-4 text-gray-400 min-h-[1.5rem]"></div>
+             </div>
 
-            <div id="resultSection" class="glass-card p-6 md:p-8 mt-8 hidden">
-                <h2 class="text-2xl font-orbitron text-center mb-6">Analysis Result</h2>
-                <div class="flex flex-col md:flex-row items-center justify-center gap-8">
-                    <div class="relative w-48 h-48">
-                        <svg class="w-full h-full" viewBox="0 0 36 36">
-                            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#374151" stroke-width="3" />
-                            <path id="resultGauge" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="url(#gradient)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0, 100" />
-                            <defs><linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#34D399;" /><stop offset="50%" style="stop-color:#FBBF24;" /><stop offset="100%" style="stop-color:#F87171;" /></linearGradient></defs>
-                        </svg>
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            <span id="confidenceScore" class="text-4xl font-orbitron font-bold">0%</span>
-                        </div>
-                    </div>
-                    <div class="text-center md:text-left">
-                        <p class="text-gray-400 text-lg">Classification:</p>
-                        <p id="predictionText" class="text-4xl font-bold font-orbitron">---</p>
-                    </div>
-                </div>
-            </div>
-        </main>
+             <div id="resultSection" class="glass-card p-6 md:p-8 mt-8 hidden">
+                 <h2 class="text-2xl font-orbitron text-center mb-6">Analysis Result</h2>
+                 <div class="flex flex-col md:flex-row items-center justify-center gap-8">
+                     <div class="relative w-48 h-48">
+                         <svg class="w-full h-full" viewBox="0 0 36 36">
+                             <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#374151" stroke-width="3" />
+                             <path id="resultGauge" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="url(#gradient)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0, 100" />
+                             <defs><linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#34D399;" /><stop offset="50%" style="stop-color:#FBBF24;" /><stop offset="100%" style="stop-color:#F87171;" /></linearGradient></defs>
+                         </svg>
+                         <div class="absolute inset-0 flex items-center justify-center">
+                             <span id="confidenceScore" class="text-4xl font-orbitron font-bold">0%</span>
+                         </div>
+                     </div>
+                     <div class="text-center md:text-left">
+                         <p class="text-gray-400 text-lg">Classification:</p>
+                         <p id="predictionText" class="text-4xl font-bold font-orbitron">---</p>
+                     </div>
+                 </div>
+             </div>
+          </div>
+        <!-- About Tab -->
+    <div id="about-content" class="tab-content hidden glass-card p-6 md:p-8">
+     <div class="flex flex-col md:flex-row justify-between gap-6">
+      <!-- Left: About Section -->
+     <div class="md:w-3/4">
+       <h2 class="text-2xl font-orbitron mb-4">About SpamClassifier AI</h2>
+       <p class="text-gray-300 leading-relaxed mb-4">
+         SpamClassifier AI is a demonstration of the power of edge computing and machine learning in the browser.
+        </p>
+        <p class="text-gray-300 leading-relaxed font-semibold">Key Principles:</p>
+      <ul class="list-disc list-inside text-gray-300 leading-relaxed mt-2 space-y-2">
+        <li><strong class="text-cyan-400">Privacy First:</strong> Your data is never uploaded, sent, or stored anywhere. All processing is done locally.</li>
+        <li><strong class="text-cyan-400">Accessibility:</strong> Works on any modern browser, on desktop or mobile, without needing powerful hardware.</li>
+        <li><strong class="text-cyan-400">Dual Models:</strong> Utilizes two distinct, expertly trained models.</li>
+</ul>
+    </div>
+
+       <!-- Right: Developer Info -->
+         <div class="md:w-1/4 text-right">
+                   <h3 class="text-gray-400">👨‍💻Developer Info</h3>
+                   <div class="flex items-center justify-end text-gray-300 mb-2">
+                      <a href="mailto:mohidbabanbhai05@gmail.com" class="text-cyan-400 underline hover:text-cyan-300">
+                                📧mohidbabanbhai05@gmail.com
+                       </a>
+                     </div>
+                 <div
+            class="flex items-center justify-end text-gray-300 mb-2">
+                      <a href="phnto: +919014029291" class="text-cyan-400 underline hover:text-cyan-300">
+                        📞+919014029291
+                       </a>
+         </div>
+         </div>
+    </div>
+ </div>
+            
+             <!-- Add to Device Tab -->
+             <div id="device-content" class="tab-content hidden glass-card p-6 md:p-8 text-center">
+                 <h2 class="text-2xl font-orbitron mb-4">Add to Your Device</h2>
+                 <p class="text-gray-300 leading-relaxed mb-6">For quick access, you can add SpamClassifier AI to your home screen. 
+                                            This works best on mobile browsers that support Progressive Web Apps (PWAs).</p>
+                  <div class="bg-gray-900/50 p-4 rounded-lg">
+                     <p class="font-semibold">On Mobile (Chrome/Safari):</p>
+                     <p class="text-sm text-gray-400">Tap the 'Share' or 'Settings' icon in your browser and select 'Add to Home Screen'.</p>
+                 </div>
+           </div>
+        
+       </main>
     </div>
 
     <script>
@@ -248,7 +315,9 @@
                 predictionText: document.getElementById('predictionText'),
                 confidenceScore: document.getElementById('confidenceScore'),
                 resultGauge: document.getElementById('resultGauge'),
-                modelSelector: document.getElementById('modelSelector')
+                modelSelector: document.getElementById('modelSelector'),
+                tabs: document.querySelectorAll('.tab'),
+                tabContents: document.querySelectorAll('.tab-content')
             };
 
             function createModel(config) {
@@ -261,7 +330,7 @@
                 return model;
             }
 
-            // ✨ 2. REWRITTEN loadModel FUNCTION (DEFINITIVE FIX) ✨
+            // loadModel FUNCTION  
             async function loadModel(config) {
                 console.log(`Loading model for: ${config.indexUrl}`);
                 const model = createModel(config);
@@ -360,9 +429,22 @@
             }
             
             ui.analyzeBtn.addEventListener('click', analyze);
-            ui.modelSelector.addEventListener('change', (e) => {
-                ui.inputText.placeholder = e.target.value === 'sms' ? 'Enter SMS message...' : 'Enter a full URL...';
+            // Listen for change events on the radio inputs instead of the parent div
+        document.querySelectorAll('input[name="modelType"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                ui.inputText.placeholder = e.target.value === 'sms' ? 'Enter SMS message here...' : 'Enter a full URL...';
             });
+        });
+        ui.tabs.forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                ui.tabs.forEach(t => t.classList.remove('active'));
+                e.target.classList.add('active');
+                const targetContentId = `${e.target.dataset.tab}-content`;
+                ui.tabContents.forEach(content => {
+                    content.classList.toggle('hidden', content.id !== targetContentId);
+                });
+            });
+        });
             
             async function main() {
                 ui.analyzeBtn.disabled = true;
@@ -387,4 +469,3 @@
     </script>
 </body>
 </html>
-
