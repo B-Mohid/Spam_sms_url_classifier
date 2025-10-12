@@ -1,3 +1,4 @@
+```markdown
 SpamClassifier AI: Client-Side SMS & URL Classifier
 A privacy-focused, AI-powered web application that detects spam in SMS messages and malicious URLs directly in your browser. No data ever leaves your device.
 
@@ -113,3 +114,4 @@ No build settings are required. Just click "Deploy". Your site will be live!
 
 📄 License
 This project is licensed under the MIT License. See the LICENSE file for details.
+```
